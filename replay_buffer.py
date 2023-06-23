@@ -5,7 +5,7 @@ class ReplayBuffer():
         self._size = int(size)
         self._index = 0
         experince_size = int(1 + num_acts + 2*num_obs) # extra one is for the reward 
-        self._buffer = np.full(fill_value=None, shape=(num_agents, int(size), experince_size))
+        self._buffer = np.full(fill_value=None, shape=(int(size),num_agents, experince_size))
         self._sampler = np.random.default_rng()
 
     def push(self, experience: tuple):
@@ -13,15 +13,14 @@ class ReplayBuffer():
         obs = np.array(list(experience[0].values()))
         act = np.array(list(experience[1].values()))
         rewards = np.array(list(experience[2].values()))[:,np.newaxis]
-        
         obs_next = np.array(list(experience[3].values()))
 
-        self._buffer[:, self._index, :] = np.hstack([obs, act, rewards, obs_next])
-        self._index = (self._index +1)% self._size # the % operator allows to cycle and replace old expereiences
+        self._buffer[self._index, :, :] = np.hstack([obs, rewards, act, obs_next])
+        self._index = (self._index +1) % self._size # the % operator allows to cycle and replace old expereiences
 
     def sample(self, size):
         """Returns a (size x num_agents x experience_size) sample from the buffer"""
-        return self._sampler.choice(self._buffer, size, axis=1, replace=False)
+        return self._sampler.choice(self._buffer, size, axis=0, replace=False)
     
 
 if __name__=="__main__":
