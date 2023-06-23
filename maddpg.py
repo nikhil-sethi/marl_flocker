@@ -8,7 +8,7 @@ import numpy as np
 
 
 class MADDPG:
-    def __init__(self, num_obs, num_acts, num_agents) -> None:
+    def __init__(self, num_obs, num_acts, num_agents, minibatch_size) -> None:
         # understanding from https://www.youtube.com/watch?v=LaIrP-MsPSU
 
         self.num_agents = num_agents
@@ -21,13 +21,14 @@ class MADDPG:
 
         # initialise replay buffer
         self.experiences = ReplayBuffer(1e6, num_acts, num_obs, num_agents)
+        self.minibatch_size = minibatch_size
 
         self.exploration_process = OrnsteinUhlenbeckProcess(num_acts)
 
     def update(self):
         # for each agent
             # Sample minibatch of experiences
-
+            batch = self.experiences.sample(self.minibatch_size)
             # calc optimal q val
 
             # update critic
@@ -35,7 +36,6 @@ class MADDPG:
             # update actor
 
             # update targets
-        pass
 
 
     def get_action_dict(self, obs_dict):

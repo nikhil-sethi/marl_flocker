@@ -5,16 +5,16 @@ from gym_pybullet_drones.envs.single_agent_rl.BaseSingleAgentAviary import Actio
 if __name__=="__main__":
     num_agents = 2
     env = FlockAviary(num_drones=num_agents, gui=True, act=ActionType.VEL)
-    algo = MADDPG(num_agents=num_agents, num_acts=env.action_space[0].shape[0], num_obs=env.observation_space[0].shape[0])
-
-
-    # ====== main process =====
-    # Reference: https://arxiv.org/pdf/1509.02971.pdf
-
 
     # Hyperparameters
     episodes = 10000  # number of training expi
     T = 2000 # maximum steps in episode
+    minibatch_size = 1000
+
+    algo = MADDPG(num_agents=num_agents, num_acts=env.action_space[0].shape[0], num_obs=env.observation_space[0].shape[0], minibatch_size=minibatch_size)
+    
+    # ====== main process =====
+    # Reference: https://arxiv.org/pdf/1509.02971.pdf
     for _ in range(episodes):
         obs_dict = env.reset()
 
@@ -22,7 +22,7 @@ if __name__=="__main__":
             # use the actor to get action for each agent
             
             action_dict = algo.get_action_dict(obs_dict)
-            print(action_dict)
+            # print(action_dict)
             # Take one step in the world
             obs_dict_next, reward_dict, done_dict, info_dict = env.step(action_dict)
 
