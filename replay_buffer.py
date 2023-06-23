@@ -15,7 +15,7 @@ class ReplayBuffer():
         rewards = np.array(list(experience[2].values()))[:,np.newaxis]
         obs_next = np.array(list(experience[3].values()))
 
-        self._buffer[self._index, :, :] = np.hstack([obs, rewards, act, obs_next])
+        self._buffer[self._index, :, :] = np.hstack([obs, act, rewards, obs_next])
         self._index = (self._index +1) % self._size # the % operator allows to cycle and replace old expereiences
 
     def sample(self, size):

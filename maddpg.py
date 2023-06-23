@@ -19,7 +19,8 @@ class MADDPG:
         
         self.critic_input_size = num_agents*(num_acts + num_obs)
         self.critics = [Critic(self.critic_input_size, 1) for _ in range(num_agents)]
-
+        self.critic_loss_fn = torch.nn.MSELoss()
+        
         self.actor_targets = deepcopy(self.actors)
         self.critic_targets = deepcopy(self.critics)
 
@@ -29,26 +30,41 @@ class MADDPG:
 
         self.exploration_process = OrnsteinUhlenbeckProcess(num_acts)
         self.gamma = 0.99
+        
 
     def update(self):
         # understanding from https://www.youtube.com/watch?v=LaIrP-MsPSU + https://arxiv.org/pdf/1706.02275.pdf
         for i in range(self.num_agents):
             # Sample minibatch of experiences
             batch = self.experiences.sample(self.minibatch_size)
+            # print(np.all(batch==None))
+
+            # mask for episode end
+
+            done_mask = (batch[:,i,-self.num_obs+1] == None) # HACK: did only for one agent and one future state observation because the done mask will be same for all anyways.
 
             # === calc optimal q val ===
             # prepare next states for actor
-            obs_next_batch = torch.Tensor(batch[:, :, -self.num_obs:].astype(np.double)).double() # shape = minibatch_size x num_agents x num_obs
+            obs_next_batch = torch.Tensor(batch[~done_mask, :, -self.num_obs:].astype(np.double)).double() # shape = minibatch_size x num_agents x num_obs
             # next state actions from the target actors
             a_next_batch = torch.hstack([self.actor_targets[k](obs_next_batch[:,k,:]) for k in range(self.num_agents)]) # shape = minibatch_size x num_acts
             # print()
             
-            reward_batch = torch.Tensor(batch[:, i, num_obs + num_acts].astype(np.double)).double()
+            reward_batch = torch.Tensor(batch[~done_mask, i, self.num_obs + self.num_acts].astype(np.double)).double()
 
             q_next = self.critic_targets[i](torch.hstack([obs_next_batch.flatten(start_dim=1), a_next_batch]))
 
-            q_target = reward_batch.reshape(-1,1) + self.gamma*q_next
-            # print(q_target)
+            q_target = torch.zeros(self.minibatch_size, 1).double()
+            
+            q_target[~done_mask] = reward_batch.reshape(-1,1) + self.gamma*q_next
+            
+            # === calulate critic loss ===
+            obs_act_batch = torch.Tensor(batch[:, :, :self.num_acts + self.num_obs].astype(np.double)).double()
+            q_current = self.critics[i](obs_act_batch.flatten(start_dim=1))
+
+            q_loss = torch.sqrt(self.critic_loss_fn(q_target, q_current))
+
+            # print(q_loss)
             # update critic
 
             # update actor
@@ -79,11 +95,14 @@ if __name__=="__main__":
     size = 10
     algo = MADDPG(num_agents=num_agents, num_acts=num_acts, num_obs=num_obs,buffer_size=size, minibatch_size=minibatch_size)
 
-    for _ in range(size):
+    for j in range(size):
         obs_dict = {i:np.random.rand(num_obs) for i in range(num_agents)}
         act_dict = {i:np.random.rand(num_acts) for i in range(num_agents)}
         obs_dict_next = {i:np.random.rand(num_obs) for i in range(num_agents)}
         reward_dict = {i:np.random.rand(1)[0] for i in range(num_agents)}
+
+        if j == 2:
+            obs_dict_next = {i:np.full(fill_value=None, shape=(num_obs,)) for i in range(num_agents)}
 
         algo.experiences.push((obs_dict, act_dict, reward_dict, obs_dict_next))
 
