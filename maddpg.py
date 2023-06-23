@@ -9,7 +9,7 @@ import numpy as np
 
 class MADDPG:
     def __init__(self, num_obs, num_acts, num_agents, buffer_size =1e6, minibatch_size=1e3) -> None:
-        # understanding from https://www.youtube.com/watch?v=LaIrP-MsPSU
+        
 
         self.num_agents = num_agents
         self.num_obs = num_obs
@@ -17,7 +17,7 @@ class MADDPG:
 
         self.actors = [Actor(num_obs, num_acts) for _ in range(num_agents)]
         
-        self.critic_input_size = num_agents*num_acts*num_obs
+        self.critic_input_size = num_agents*(num_acts + num_obs)
         self.critics = [Critic(self.critic_input_size, 1) for _ in range(num_agents)]
 
         self.actor_targets = deepcopy(self.actors)
@@ -28,23 +28,27 @@ class MADDPG:
         self.minibatch_size = minibatch_size
 
         self.exploration_process = OrnsteinUhlenbeckProcess(num_acts)
+        self.gamma = 0.99
 
     def update(self):
+        # understanding from https://www.youtube.com/watch?v=LaIrP-MsPSU + https://arxiv.org/pdf/1706.02275.pdf
         for i in range(self.num_agents):
             # Sample minibatch of experiences
             batch = self.experiences.sample(self.minibatch_size)
 
             # === calc optimal q val ===
             # prepare next states for actor
-
-            
             obs_next_batch = torch.Tensor(batch[:, :, -self.num_obs:].astype(np.double)).double() # shape = minibatch_size x num_agents x num_obs
             # next state actions from the target actors
             a_next_batch = torch.hstack([self.actor_targets[k](obs_next_batch[:,k,:]) for k in range(self.num_agents)]) # shape = minibatch_size x num_acts
-            # print(obs_next_batch.flatten(start_dim=1))
-            # 
-            # q_next_ = self.critics[i]()
+            # print()
+            
+            reward_batch = torch.Tensor(batch[:, i, num_obs + num_acts].astype(np.double)).double()
 
+            q_next = self.critic_targets[i](torch.hstack([obs_next_batch.flatten(start_dim=1), a_next_batch]))
+
+            q_target = reward_batch.reshape(-1,1) + self.gamma*q_next
+            # print(q_target)
             # update critic
 
             # update actor
