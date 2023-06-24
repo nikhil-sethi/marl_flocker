@@ -24,6 +24,9 @@ class MADDPG:
         self.actor_targets = deepcopy(self.actors)
         self.critic_targets = deepcopy(self.critics)
 
+        self.actor_optimizers = [torch.optim.Adam(actor.parameters(), lr=0.001) for actor in self.actors]
+        self.critic_optimizers = [torch.optim.Adam(critic.parameters(), lr=0.001) for critic in self.critics]
+
         # initialise replay buffer
         self.experiences = ReplayBuffer(buffer_size, num_acts, num_obs, num_agents)
         self.minibatch_size = minibatch_size
@@ -36,44 +39,75 @@ class MADDPG:
         # understanding from https://www.youtube.com/watch?v=LaIrP-MsPSU + https://arxiv.org/pdf/1706.02275.pdf
         for i in range(self.num_agents):
             # Sample minibatch of experiences
-            batch = self.experiences.sample(self.minibatch_size)
+            batch = self.experiences.sample(self.minibatch_size).astype(np.double)
             if np.all(batch==None):
                 print("batch empty")
                 return
-
             # mask for episode end
             done_mask = (batch[:,i,-self.num_obs+1] == None) # HACK: did only for one agent and one future state observation because the done mask will be same for all anyways.
             
-            # === calc optimal q val ===
-            # prepare next states for actor
-            obs_next_batch = torch.Tensor(batch[~done_mask, :, -self.num_obs:].astype(np.double)).double() # shape = minibatch_size x num_agents x num_obs
-            # next state actions from the target actors
-            a_next_batch = torch.hstack([self.actor_targets[k](obs_next_batch[:,k,:]) for k in range(self.num_agents)]) # shape = minibatch_size x num_acts
-            # print()
+            # batch = batch[~done_mask, ...] # only keep episodes which are not terminal
+
+            # ====== preprocess batch for networks ========
             
-            reward_batch = torch.Tensor(batch[~done_mask, i, self.num_obs + self.num_acts].astype(np.double)).double()
+            obs_batch = torch.Tensor(batch[..., :self.num_obs]) # shape = minibatch_size x num_agents x num_obs
+            act_batch = torch.Tensor(batch[..., self.num_obs:self.num_obs+self.num_acts]).double() # shape = minibatch_size x num_agents x num_acts
+            obs_next_batch = torch.Tensor(batch[~done_mask, :, -self.num_obs:]).double() # shape = minibatch_size x num_agents x num_obs
+            reward_batch = torch.Tensor(batch[~done_mask, i, self.num_obs + self.num_acts])
 
-            q_next = self.critic_targets[i](torch.hstack([obs_next_batch.flatten(start_dim=1), a_next_batch]))
+            # ======= calc optimal q val ========
+                # next state actions from the target actors
+            act_next_batch = torch.hstack([self.actor_targets[k](obs_next_batch[:,k,:]) for k in range(self.num_agents)]) # shape = minibatch_size x num_acts
+            
+                # The future q value depends on all next states and actions
+            q_next = self.critic_targets[i](torch.hstack([obs_next_batch.flatten(start_dim=1), act_next_batch]))
 
+                # for the last step in the episode, the target q is 0
             q_target = torch.zeros(self.minibatch_size, 1).double()
             
-            q_target[~done_mask] = reward_batch.reshape(-1,1) + self.gamma*q_next
+            q_target[~done_mask] = reward_batch.reshape(-1,1) + self.gamma*q_next # shape= batch_size x 1
             
             # === calulate critic loss ===
-            obs_act_batch = torch.Tensor(batch[:, :, :self.num_acts + self.num_obs].astype(np.double)).double()
-            q_current = self.critics[i](obs_act_batch.flatten(start_dim=1))
+                # just the current observation forwarded through the critic
+            q_current = self.critics[i](torch.hstack([obs_batch.flatten(start_dim=1), act_batch.flatten(start_dim=1)]))
             q_current[torch.isnan(q_current)] = 0    # this is sketchy. might cause troubles in the future
 
-            q_loss = torch.sqrt(self.critic_loss_fn(q_target, q_current))
+            q_loss = torch.sqrt(self.critic_loss_fn(q_target, q_current)) # scalar
 
+            # ====== critic backpropagate and optimize =========
+            self.critic_optimizers[i].zero_grad()
             q_loss.backward()
+            self.critic_optimizers[i].step()
             
-            # print(q_loss)
-            # update critic
+            # ===== calculate policy gradient =====
 
-            # update actor
+                # get current action from current state 
+            act_i = self.actors[i](obs_batch[:, i, :]) 
 
-            # update targets
+                # intersperse this action into the batch (i.e. assuming all other actors are constant => you choose only your own destiny)
+            act_batch[:, i, :] = act_i    
+
+                # let's see how good this idea is i.e. ask the omniscient all powerful oracle: the centralised critic
+            q_act = self.critics[i](torch.hstack([obs_batch.flatten(start_dim=1), act_batch.flatten(start_dim=1)]))
+            
+            act_loss = -torch.mean(q_act) # the negative sign is just to make sure it's gradient ascent
+
+            # ===== actor backpropagate and optimize =====
+            self.actor_optimizers[i].zero_grad()
+            act_loss.backward()
+            self.actor_optimizers[i].step()
+
+            # soft update targets
+            
+            self.soft_update_targets()
+
+    def soft_update(target, source, t):
+        # courtesy of github.com/xuehy/pytorch-maddpg.git
+    
+        for target_param, source_param in zip(target.parameters(),
+                                            source.parameters()):
+            target_param.data.copy_(
+                (1 - t) * target_param.data + t * source_param.data)
 
 
     def get_action_dict(self, obs_dict):
