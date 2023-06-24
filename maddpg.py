@@ -37,12 +37,13 @@ class MADDPG:
         for i in range(self.num_agents):
             # Sample minibatch of experiences
             batch = self.experiences.sample(self.minibatch_size)
-            # print(np.all(batch==None))
+            if np.all(batch==None):
+                print("batch empty")
+                return
 
             # mask for episode end
-
             done_mask = (batch[:,i,-self.num_obs+1] == None) # HACK: did only for one agent and one future state observation because the done mask will be same for all anyways.
-
+            
             # === calc optimal q val ===
             # prepare next states for actor
             obs_next_batch = torch.Tensor(batch[~done_mask, :, -self.num_obs:].astype(np.double)).double() # shape = minibatch_size x num_agents x num_obs
@@ -61,9 +62,12 @@ class MADDPG:
             # === calulate critic loss ===
             obs_act_batch = torch.Tensor(batch[:, :, :self.num_acts + self.num_obs].astype(np.double)).double()
             q_current = self.critics[i](obs_act_batch.flatten(start_dim=1))
+            q_current[torch.isnan(q_current)] = 0    # this is sketchy. might cause troubles in the future
 
             q_loss = torch.sqrt(self.critic_loss_fn(q_target, q_current))
 
+            q_loss.backward()
+            
             # print(q_loss)
             # update critic
 

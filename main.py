@@ -6,14 +6,14 @@ import numpy as np
 if __name__=="__main__":
     num_agents = 2
     
-    env = FlockAviary(num_drones=num_agents, gui=False, act=ActionType.VEL)
+    env = FlockAviary(num_drones=num_agents, gui=True, act=ActionType.VEL)
     num_obs = env.observation_space[0].shape[0]
 
     # Hyperparameters
     episodes = 10000  # number of training expi
     T = 1000 # maximum steps in episode
     minibatch_size = 1000
-    episodes_before_train = 100
+    episodes_before_train = 10 # on average 10 episodes to fill the replay buffer
 
     algo = MADDPG(num_agents=num_agents, num_acts=env.action_space[0].shape[0], num_obs=env.observation_space[0].shape[0], minibatch_size=minibatch_size)
     
@@ -38,11 +38,12 @@ if __name__=="__main__":
 
             # update replay buffer
             algo.experiences.push((obs_dict, action_dict, reward_dict, obs_dict_next))
+            
 
             obs_dict = obs_dict_next
 
             # update actor + critic + targets
-            if episode<episodes_before_train:
+            if episode>episodes_before_train:
                 algo.update()
 
         print("episode done")
