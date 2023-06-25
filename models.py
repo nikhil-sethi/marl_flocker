@@ -27,9 +27,20 @@ class Actor(BaseModel):
     """Policy network"""
     def __init__(self, input_shape, output_size) -> None:
         super().__init__(input_shape, output_size)
+        num_units = 64
+        self._model = nn.Sequential(
+            nn.Linear(input_shape, num_units),
+            nn.ReLU(),
+            nn.Linear(num_units, num_units),
+            nn.ReLU(),
+            nn.Linear(num_units, num_units),
+            nn.ReLU(),
+            nn.Linear(num_units, output_size),
+            nn.Tanh()
+        ).double()
 
     # def forward(self, inp):
-    #     pass
+    #     return nn.Tanh
 
 
 class Critic(BaseModel):
