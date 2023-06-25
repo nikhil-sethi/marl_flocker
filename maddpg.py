@@ -8,14 +8,23 @@ import numpy as np
 
 
 class MADDPG:
-    def __init__(self, num_obs, num_acts, num_agents, buffer_size =1e6, minibatch_size=1e3) -> None:
+    def __init__(self, train, num_obs, num_acts, num_agents, buffer_size =1e6, minibatch_size=1e3, history={}, ep_before_train = 100) -> None:
         
-
+        self.episodes_before_train = ep_before_train
+        self.history = history
         self.num_agents = num_agents
         self.num_obs = num_obs
         self.num_acts = num_acts
-
-        self.actors = [Actor(num_obs, num_acts) for _ in range(num_agents)]
+        self.train = train
+        self.actors = []
+        for i in range(num_agents):
+            if train:
+                self.actors.append(Actor(num_obs, num_acts))
+            else:
+                model = torch.load(f'actor_{i}')
+                model.eval()
+                self.actors.append(model)
+        # self.actors = [ if tfor _ in range(num_agents)]
         
         self.critic_input_size = num_agents*(num_acts + num_obs)
         self.critics = [Critic(self.critic_input_size, 1) for _ in range(num_agents)]
@@ -36,6 +45,7 @@ class MADDPG:
         self.step = 0
         self.tau = 0.01      
         self.var = [1 for i in range(num_agents)]
+        self.episode = 0
 
     def update(self):
         # understanding from https://www.youtube.com/watch?v=LaIrP-MsPSU + https://arxiv.org/pdf/1706.02275.pdf
@@ -78,7 +88,6 @@ class MADDPG:
             q_current = torch.zeros(self.minibatch_size, 1).double()
                 # just the current observation forwarded through the critic
             q_current[~none_mask] = self.critics[i](torch.hstack([obs_batch.flatten(start_dim=1), act_batch.flatten(start_dim=1)]))
-            # q_current[torch.isnan(q_current)] = 0    # this is sketchy. might cause troubles in the future
 
             q_loss = torch.sqrt(self.critic_loss_fn(q_target, q_current)) # scalar
 
@@ -88,12 +97,11 @@ class MADDPG:
             self.critic_optimizers[i].step()
             
             # ===== calculate policy gradient =====
-            torch.autograd.set_detect_anomaly(True)
                 # get current action from current state 
             self.actor_optimizers[i].zero_grad()
 
             act_i = self.actors[i](obs_batch[:, i, :]) 
-            # act_i[torch.isnan(act_i)] = 0  # HACK
+
                 # intersperse this action into the batch (i.e. assuming all other actors are constant => you choose only your own destiny)
             ac = act_batch.clone()
             ac[:, i, :] = act_i    
@@ -101,10 +109,10 @@ class MADDPG:
                 # let's see how good this idea is i.e. ask the omniscient all powerful oracle: the centralised critic
             q_act = self.critics[i](torch.hstack([obs_batch.flatten(start_dim=1), ac.flatten(start_dim=1)]))
             
-            # q_act[torch.isnan(q_act)] = 0  # HACK
             
             act_loss = -q_act.mean() # the negative sign is just to make sure it's gradient ascent
             # print(act_loss)
+
             # ===== actor backpropagate and optimize =====
             
             # for name, param in self.actors[i].named_parameters():
@@ -139,16 +147,19 @@ class MADDPG:
         
         # feedforward observation to actor
         with torch.no_grad():
-            return {i:3*self.get_action(i, obs_dict[i]) for i in range(self.num_agents)}
+            return {i:self.get_action(i, obs_dict[i]) for i in range(self.num_agents)}
     
 
     def get_action(self, i, obs:np.ndarray) -> np.ndarray:
         self.step += 1
         vel = self.actors[i](torch.from_numpy(obs)).numpy()
+        # if self.train:
         vel += np.random.randn(4) * self.var[i]
-        if self.var[i] > 0.05:
+
+        if self.episode>self.episodes_before_train and self.var[i] > 0.05:
             self.var[i] *= 0.999998
         vel = np.clip(vel, -1.0, 1.0)
+        vel[3] *= 3 # max speed
         return vel
     
 

@@ -14,11 +14,15 @@ class FlockingEnv(FlockAviary):
         # obs = (self._getDroneStateVector(i))
         states = np.array([self._clipAndNormalizeState(self._getDroneStateVector(i)) for i in range(self.NUM_DRONES)])
         des_state = self.get_desired_state(0)
-        rewards[0] = -2 * np.linalg.norm(np.array([0,0,0]) - states[0, 10:13])**2
-        rewards[0] += -1 * sum(states[0, 7:9])
-        rewards[1] = -2 * np.linalg.norm(np.array([0,0,0]) - states[1, 10:13])**2
+        rewards[0] = -2 * np.linalg.norm(des_state[10:13] - states[0, 10:13])**2
+        # rewards[0] = -2 * np.linalg.norm(np.array([0.1,0.05,0]) - states[0, 0:3])**2
+        # print(rewards[0])
+        rewards[0] += -1 * sum(np.abs(states[0, 7:9]))
+        # rewards[1] = -2 * np.linalg.norm(np.array([0.5,0.5,0]) - states[1, 0:3])**2
+        # rewards[1]=0
         # for i in range(1, self.NUM_DRONES):
         #     rewards[i] = -1 * np.linalg.norm(states[i-1, 2] - states[i, 2])**2
+        # print(f"reward 0: {rewards[0]:0.3f} | reward 1: {rewards[1]:0.3f} ")
         return rewards
     
     def _clipAndNormalizeStateWarning(self, state, clipped_pos_xy, clipped_pos_z, clipped_rp, clipped_vel_xy, clipped_vel_z):
@@ -26,5 +30,5 @@ class FlockingEnv(FlockAviary):
 
     def get_desired_state(self, i):
         state = np.zeros(20)
-        state[10:13] = np.array([0,1,0])
+        state[10:13] = self.SPEED_LIMIT*2*np.array([0,1,0])
         return self._clipAndNormalizeState(state)
