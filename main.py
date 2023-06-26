@@ -10,6 +10,8 @@ import torch
 
 TRAIN = False
 DEBUG = True
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu') # cpu is apparently faster in this case
 
 np.set_printoptions(precision=3, suppress=True)
 
@@ -41,17 +43,17 @@ if __name__=="__main__":
         episodes = 10000  # number of training expi
         T = 2000 # maximum steps in episode
         minibatch_size = 1000
-        episodes_before_train = 60 # on average 10 episodes to fill the replay buffer
+        episodes_before_train = 1 # on average 10 episodes to fill the replay buffer
         history = {"reward":[], 0:{"reward":0}, 1:{"reward":0}}
         
-        algo = MADDPG(TRAIN, num_agents=num_agents, num_acts=env.action_space[0].shape[0], num_obs=env.observation_space[0].shape[0], minibatch_size=minibatch_size, history=history, ep_before_train = episodes_before_train)
+        algo = MADDPG(TRAIN, num_agents=num_agents, num_acts=env.action_space[0].shape[0], num_obs=env.observation_space[0].shape[0], minibatch_size=minibatch_size, history=history, ep_before_train = episodes_before_train, device = device)
         total_reward = 0
         
         # ====== main process =====
         # Reference: https://arxiv.org/pdf/1509.02971.pdf
         for episode in range(episodes):
             obs_dict = env.reset()
-
+            # act_loss_ep = 0
             for t in range(1, T):
                 # use the actor to get action for each agent
                 
