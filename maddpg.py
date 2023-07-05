@@ -50,58 +50,39 @@ class MADDPG:
         self.var = [1 for i in range(num_agents)]
         self.episode = 0
 
-    def update(self):
+    def update(self, experiences:ReplayBuffer):
         # understanding from https://www.youtube.com/watch?v=LaIrP-MsPSU + https://arxiv.org/pdf/1706.02275.pdf
         
         act_losses = []
         q_losses = []
 
         # Sample minibatch of experiences
-        batch = self.experiences.sample()
-        
-        # if np.all(batch==None):
-        #     # print("batch empty")
-        #     return act_losses, q_losses
+        obs, act, rewards, obs_next, dones  = experiences.sample()
+
+        # ====== preprocess batch for networks ========
+        obs_batch = torch.tensor(obs, dtype=torch.float).to(self.device) # shape = minibatch_size x num_agents x num_obs
+        act_batch = torch.tensor(act, dtype=torch.float).to(self.device) # shape = minibatch_size x num_agents x num_acts
+        obs_next_batch = torch.tensor(obs_next, dtype=torch.float).to(self.device) # shape = minibatch_size x num_agents x num_obs
+        reward_batch = torch.tensor(rewards, dtype=torch.float).to(self.device)
+        done_batch = torch.tensor(dones, dtype=torch.float).to(self.device)
+
+        # next state actions from all the target actors
+        act_next_batch = torch.hstack([self.actor_targets[k].forward(obs_next_batch[:,k,:]) for k in range(self.num_agents)]) # shape = minibatch_size x num_acts
+            
         for i in range(self.num_agents):
-            
-            # mask for episode end
-            done_mask = (batch[:,i,-self.num_obs+1] == 0) # HACK: did only for one agent and one future state observation because the done mask will be same for all anyways.
-            # print(done_mask.shape)
-            none_mask = (batch[:,i,0] == None)
-
-            # print(sum(~none_mask))
-            # batch = batch[~done_mask, ...] # only keep episodes which are not terminal
-
-            # ====== preprocess batch for networks ========
-            
-            obs_batch = torch.from_numpy(batch[:, :, :self.num_obs]).to(self.device)# shape = minibatch_size x num_agents x num_obs
-            act_batch = torch.from_numpy(batch[:,:, self.num_obs:self.num_obs+self.num_acts]).to(self.device) # shape = minibatch_size x num_agents x num_acts
-            obs_next_batch = torch.from_numpy(batch[:, :, -self.num_obs-1:-1]).to(self.device) # shape = minibatch_size x num_agents x num_obs
-            reward_batch = torch.from_numpy(batch[:, i, self.num_obs + self.num_acts, np.newaxis]).to(self.device)
-
-            done_batch = torch.from_numpy(batch[:, i, -1,np.newaxis]).to(self.device)
-
             # ======= calc optimal q val ========
-                # next state actions from all the target actors
-            act_next_batch = torch.hstack([self.actor_targets[k].forward(obs_next_batch[:,k,:]) for k in range(self.num_agents)]) # shape = minibatch_size x num_acts
             
                 # The future q value depends on all next states and actions
             with torch.no_grad():
-                q_next = self.critic_targets[i].forward(torch.hstack([obs_next_batch.flatten(start_dim=1), act_next_batch]))
-
-                    # for the last step in the episode, the target q is 0
-                # q_target = torch.zeros(self.minibatch_size, 1, device=self.device).double()
-                
-                # q_target[~done_mask] = reward_batch.reshape(-1,1) + self.gamma*q_next # shape= batch_size x 1
-                
-                q_target = reward_batch + (1-done_batch).int()*self.gamma*q_next # shape= batch_size x 1
+                q_next = self.critic_targets[i].forward(torch.hstack([obs_next_batch.flatten(start_dim=1), act_next_batch])).flatten()
+                q_target = reward_batch[:, i] + (1-done_batch[:, i]).int()*self.gamma*q_next # shape= batch_size x 1
 
 
             # === calulate critic loss ===
 
             # q_current = torch.zeros(self.minibatch_size, 1, device=self.device).double()
                 # just the current observation forwarded through the critic
-            q_current = self.critics[i](torch.hstack([obs_batch.flatten(start_dim=1), act_batch.flatten(start_dim=1)]))
+            q_current = self.critics[i](torch.hstack([obs_batch.flatten(start_dim=1), act_batch.flatten(start_dim=1)])).flatten()
 
             q_loss = self.critic_loss_fn(q_target, q_current) # scalar
 
@@ -129,12 +110,7 @@ class MADDPG:
 
             # ===== actor backpropagate and optimize =====
             self.actors[i].optimizer.zero_grad()
-            # for name, param in self.actors[i].named_parameters():
-            #     print(name, torch.isfinite(param).all())
             act_loss.backward(retain_graph=True)
-            # for name, param in self.actors[i].named_parameters():
-            #     print("param.data",torch.isfinite(param.data).all())
-            #     print(name, torch.isfinite(param.grad).all())
             self.actors[i].optimizer.step()
             
             # don't append the loss directly! it has the graph attached to it and will increase memory a lot
@@ -142,11 +118,9 @@ class MADDPG:
             q_losses.append(q_loss.data) 
 
         # soft update targets
-        # if self.step % 100 ==0:
         for j in range(self.num_agents):
             self.soft_update2(self.critic_targets[j], self.critics[j])
             self.soft_update2(self.actor_targets[j], self.actors[j])
-
 
         return act_losses, q_losses
 
@@ -181,25 +155,17 @@ class MADDPG:
 
     def get_action(self, i, obs:np.ndarray) -> np.ndarray:
         self.step += 1
-        # vel = np.zeros(self.num_acts)
+        vel = np.zeros(self.num_acts)
+        action = self.actors[i].forward(torch.tensor([obs], dtype=torch.float)).detach().numpy().flatten()
 
-        # if self.train:
-        #     if not self.experiences.ready() or self.episode<self.episodes_before_train: 
-        #         vel += np.random.rand(self.num_acts)
-
-
-        # if self.episode>self.episodes_before_train and self.train:
-        vel = self.actors[i].forward(torch.from_numpy(obs)).detach().numpy()
         if self.train:
             noise = np.random.rand(self.num_acts)
             vel += noise
-        # print(vel)
-            # print(vel)
-            # if self.train:
-            #     vel += np.random.rand(self.num_acts) #* self.var[i]
+            if self.episode>self.episodes_before_train:
+                vel+= action
+        else:
+            vel+=action
 
-        if self.episode>self.episodes_before_train and self.var[i] > 0.05:
-            self.var[i] *= 0.999998
         # if not self.train:
         #     vel = np.clip(vel, 0.0, 1.0)
         # vel[3] *= 3 # max speed

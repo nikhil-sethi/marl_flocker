@@ -5,8 +5,10 @@ class ReplayBuffer():
         self._size = int(size)
         self._batch_size = batch_size
         self._counter = 0
+        self.num_obs = num_obs
+        self.num_acts = num_acts
         experince_size = int(2 + num_acts + 2*num_obs) # done, reward, acts, obs, obs_next
-        self._buffer = np.zeros(shape=(int(size),num_agents, experince_size), dtype=np.double)
+        self._buffer = np.zeros(shape=(int(size),num_agents, experince_size), dtype=np.float)
         # self._sampler = np.random.default_rng()
 
     def push(self, experience: tuple):
@@ -26,10 +28,18 @@ class ReplayBuffer():
     def sample(self):
         """Returns a (size x num_agents x experience_size) sample from the buffer"""
         choice = np.random.choice(min(self._counter, self._size), self._batch_size, replace=False)
-        return self._buffer[choice]
+
+        obs = self._buffer[choice, :, :self.num_obs]# shape = minibatch_size x num_agents x num_obs
+        act = self._buffer[choice, :, self.num_obs:self.num_obs + self.num_acts] # shape = minibatch_size x num_agents x num_acts
+        # print(act)
+        rewards = self._buffer[choice, :, self.num_obs + self.num_acts]
+        obs_next = self._buffer[choice, :, -self.num_obs-1:-1] # shape = minibatch_size x num_agents x num_obs
+        dones = self._buffer[choice, :, -1]
+
+        return obs, act, rewards, obs_next, dones 
 
     def ready(self):
-        return self._counter > self._batch_size
+        return self._counter >= self._batch_size
 
 if __name__=="__main__":
     # unit testing the replay buffer

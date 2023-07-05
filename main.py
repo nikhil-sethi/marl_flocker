@@ -8,14 +8,17 @@ from subprocess import Popen, PIPE
 import time
 import torch
 import argparse
+from replay_buffer import ReplayBuffer
+import pybullet as p
+
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 device = torch.device('cpu') # cpu is apparently faster in this case
 
 np.set_printoptions(precision=3, suppress=True)
 seed = 0
-# np.random.seed(seed)
-# torch.manual_seed(seed)
+np.random.seed(seed)
+torch.manual_seed(seed)
 
 if __name__=="__main__":
 
@@ -30,28 +33,36 @@ if __name__=="__main__":
         env = FlockingEnv(num_drones=num_agents, gui= TRAIN, act=ActionType.VEL, freq=80)
         # env = DebugEnv(gui= not TRAIN)
         num_obs = env.observation_space[0].shape[0]
-
+        num_acts = env.action_space[0].shape[0]
         # Hyperparameters
         episodes = 10000  # number of training expi
-        T = 100 # maximum steps in episode
+        max_steps = 100 # maximum steps in episode
         minibatch_size = 1024
         episodes_before_train = 50 # on average 10 episodes to fill the replay buffer
         history = {"reward":[], 0:{"reward":0, "act_loss":[], "q_loss":[]}, 1:{"reward":0}}
         
-        algo = MADDPG(TRAIN, num_agents=num_agents, num_acts=env.action_space[0].shape[0], num_obs=env.observation_space[0].shape[0], minibatch_size=minibatch_size, history=history, ep_before_train = episodes_before_train, device = device)
+        algo = MADDPG(TRAIN, num_agents=num_agents, num_acts=num_acts, num_obs=num_obs, minibatch_size=minibatch_size, history=history, ep_before_train = episodes_before_train, device = device)
+        
+        
+
+        experiences = ReplayBuffer(1e6, batch_size=minibatch_size, num_acts=num_acts, num_obs=num_obs, num_agents=num_agents)
+        
         total_reward = 0
         best_reward = -np.inf
-        steps = 0
+        total_steps = 0
         # ====== main process =====
         # Reference: https://arxiv.org/pdf/1509.02971.pdf
         for episode in range(episodes):
             obs_dict = env.reset()
+            # id = p.addUserDebugPoints(pointPositions = [[0.1,0.5,0.1]], pointColorsRGB = [[0,0,0]], pointSize=5)
             reward_ep = 0
             act_loss_ep = 0
             q_loss_ep = 0
             start = time.perf_counter()
             dones = np.zeros((num_agents,1), dtype=bool)
-            for t in range(1, T):
+            episode_steps = 0
+            
+            while not any(dones):
                 # use the actor to get action for each agent
                 action_dict = algo.get_action_dict(obs_dict)
                 # print(obs_dict[0][7:10])
@@ -64,6 +75,7 @@ if __name__=="__main__":
                 # print(episode, action_dict, obs_dict)
                 # time.sleep(1)
                 obs_dict_next, reward_dict, done_dict, info_dict = env.step(action_dict)
+                
                 # print(time.perf_counter()-t1)
                 # if not TRAIN:
                     # env.render()
@@ -75,26 +87,20 @@ if __name__=="__main__":
                 reward_ep += sum(reward_dict.values())/num_agents
                 
                 # if episode ends, manually set observations to None
-                if t == T-1 or done_dict[0]==True:
+                if episode_steps >= max_steps:
                     dones = np.ones((num_agents,1), dtype=bool)
 
-                # update replay buffer
-                # print(obs_dict_next)
-                # if np.any(np.isnan()):
+                # update replay buffer           
+                experiences.push((obs_dict, action_dict, reward_dict, obs_dict_next, dones))
                 
-                algo.experiences.push((obs_dict, action_dict, reward_dict, obs_dict_next, dones))
-                
-                if done_dict[0]==True:
-                    print("dfg")
-                    break
 
                 obs_dict = obs_dict_next
 
                 # update actor + critic + targets
-                if steps % 100==0:
-                    if algo.experiences.ready() and TRAIN and episode>episodes_before_train:
+                if total_steps % 100==0:
+                    if experiences.ready() and TRAIN and episode>episodes_before_train:
                     
-                        act_loss, q_loss = algo.update()
+                        act_loss, q_loss = algo.update(experiences)
                         # history[0]["act_loss"] += act_loss[0]
                         if act_loss:
                             act_loss_ep += act_loss[0]
@@ -106,7 +112,8 @@ if __name__=="__main__":
                                 torch.save(model, f'actor_{i}')
                             best_reward = avg_reward
                 
-                steps +=1
+                total_steps +=1
+                episode_steps += 1
                 algo.episode = episode
             history["reward"].append(reward_ep)
             

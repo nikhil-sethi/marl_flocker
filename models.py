@@ -15,7 +15,7 @@ class BaseModel(nn.Module):
             # nn.Linear(num_units, num_units),
             # nn.ReLU(),
             nn.Linear(num_units, output_size)
-        ).double()
+        )
 
         self.optimizer = torch.optim.Adam(self.parameters(), lr=alpha)
         self.device = device
@@ -35,7 +35,7 @@ class Actor(BaseModel):
 
     def forward(self, input):
         out = super().forward(input)
-        return torch.softmax(out, dim=0)
+        return torch.softmax(out, dim=1)
 
 
 class Critic(BaseModel):

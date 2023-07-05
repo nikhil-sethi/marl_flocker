@@ -6,11 +6,28 @@ from gym_pybullet_drones.envs.multi_agent_rl import FlockAviary
 import numpy as np
 import pygame as pg
 import math
+import pybullet as p
+
+def v_cap(v):
+    return v/np.linalg.norm(v)
 
 class FlockingEnv(FlockAviary):
     def __init__(self, drone_model: DroneModel = DroneModel.CF2X, num_drones: int = 2, neighbourhood_radius: float = np.inf, initial_xyzs=None, initial_rpys=None, physics: Physics = Physics.PYB, freq: int = 240, aggregate_phy_steps: int = 1, gui=False, record=False, obs: ObservationType = ObservationType.KIN, act: ActionType = ActionType.RPM):
         super().__init__(drone_model, num_drones, neighbourhood_radius, initial_xyzs, initial_rpys, physics, freq, aggregate_phy_steps, gui, record, obs, act)
 
+    # def reset(self):
+    #     # self.INIT_RPYS
+    #     self.INIT_XYZS = np.array([[1,1,1]])
+    #     obs = super().reset()
+    #     # pos = [1,1,1]
+    #     # rpy = [0,0,0]
+    #     # for i in range(self.NUM_DRONES):
+    #     #     p.resetBasePositionAndOrientation(self.DRONE_IDS[i],
+    #     #                                     pos,
+    #     #                                     p.getQuaternionFromEuler(rpy),
+    #     #                                     physicsClientId=self.CLIENT
+    #     #                                     )
+    #     return obs
     def step(self, actions):
         # actions[0][-1]*=3
         
@@ -31,10 +48,11 @@ class FlockingEnv(FlockAviary):
         # obs = (self._getDroneStateVector(i))
         states = np.array([self._clipAndNormalizeState(self._getDroneStateVector(i)) for i in range(self.NUM_DRONES)])
         des_state = self.get_desired_state(0)
-        # print(des_state)
-        rewards[0] = -2 * np.linalg.norm(des_state[10:13] - states[0, 10:13])/2
-        # rewards[0] = -2 * np.linalg.norm(np.array([0.1,0.05,0]) - states[0, 0:3])**2
-        # print(rewards[0])
+        
+        rewards[0] = -4 * np.linalg.norm(des_state[10:12] - states[0, 10:12])/2
+        # print(des_state[10:13], " | ", states[0, 10:13], rewards[0])
+        # rewards[0] = -4 * np.linalg.norm(np.array([0.1,0.5]) - states[0, 0:2])
+        # print(states[0,10:12])
         rewards[0] += -1 * sum(np.abs(states[0, 7:9]))
         # rewards[1] = -2 * np.linalg.norm(np.array([0.5,0.5,0]) - states[1, 0:3])**2
         # rewards[1]=0
@@ -48,13 +66,9 @@ class FlockingEnv(FlockAviary):
 
     def get_desired_state(self, i):
         state = np.zeros(20)
-        state[10:13] = self.SPEED_LIMIT*2*np.array([0,1,0])
+        state[10:13] = self.SPEED_LIMIT*2*v_cap(np.array([2,1,0]))
         return self._clipAndNormalizeState(state)
     
-
-
-def v_cap(v):
-    return v/np.linalg.norm(v)
 
 class DebugEnv(gym.Env):
     def __init__(self, gui=False):
