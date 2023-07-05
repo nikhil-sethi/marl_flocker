@@ -1,27 +1,35 @@
 import numpy as np
 
 class ReplayBuffer():
-    def __init__(self, size, num_acts, num_obs, num_agents) -> None:
+    def __init__(self, size, batch_size, num_acts, num_obs, num_agents) -> None:
         self._size = int(size)
-        self._index = 0
-        experince_size = int(1 + num_acts + 2*num_obs) # extra one is for the reward 
-        self._buffer = np.full(fill_value=None, shape=(int(size),num_agents, experince_size))
-        self._sampler = np.random.default_rng()
+        self._batch_size = batch_size
+        self._counter = 0
+        experince_size = int(2 + num_acts + 2*num_obs) # done, reward, acts, obs, obs_next
+        self._buffer = np.zeros(shape=(int(size),num_agents, experince_size), dtype=np.double)
+        # self._sampler = np.random.default_rng()
 
     def push(self, experience: tuple):
 
         obs = np.array(list(experience[0].values()))
+        # print(experience[1])
         act = np.array(list(experience[1].values()))
         rewards = np.array(list(experience[2].values()))[:,np.newaxis]
         obs_next = np.array(list(experience[3].values()))
+        dones = experience[4]
 
-        self._buffer[self._index, :, :] = np.hstack([obs, act, rewards, obs_next])
-        self._index = (self._index +1) % self._size # the % operator allows to cycle and replace old expereiences
-
-    def sample(self, size):
-        """Returns a (size x num_agents x experience_size) sample from the buffer"""
-        return self._sampler.choice(self._buffer, size, axis=0, replace=False)
+        index = self._counter % self._size # the % operator allows to cycle and replace old expereiences
+        self._buffer[index, :, :] = np.hstack([obs, act, rewards, obs_next, dones])
+        self._counter +=1
     
+
+    def sample(self):
+        """Returns a (size x num_agents x experience_size) sample from the buffer"""
+        choice = np.random.choice(min(self._counter, self._size), self._batch_size, replace=False)
+        return self._buffer[choice]
+
+    def ready(self):
+        return self._counter > self._batch_size
 
 if __name__=="__main__":
     # unit testing the replay buffer
