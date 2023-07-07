@@ -15,50 +15,70 @@ class FlockingEnv(FlockAviary):
     def __init__(self, drone_model: DroneModel = DroneModel.CF2X, num_drones: int = 2, neighbourhood_radius: float = np.inf, initial_xyzs=None, initial_rpys=None, physics: Physics = Physics.PYB, freq: int = 240, aggregate_phy_steps: int = 1, gui=False, record=False, obs: ObservationType = ObservationType.KIN, act: ActionType = ActionType.RPM):
         super().__init__(drone_model, num_drones, neighbourhood_radius, initial_xyzs, initial_rpys, physics, freq, aggregate_phy_steps, gui, record, obs, act)
 
-    # def reset(self):
-    #     # self.INIT_RPYS
-    #     self.INIT_XYZS = np.array([[1,1,1]])
-    #     obs = super().reset()
-    #     # pos = [1,1,1]
-    #     # rpy = [0,0,0]
-    #     # for i in range(self.NUM_DRONES):
-    #     #     p.resetBasePositionAndOrientation(self.DRONE_IDS[i],
-    #     #                                     pos,
-    #     #                                     p.getQuaternionFromEuler(rpy),
-    #     #                                     physicsClientId=self.CLIENT
-    #     #                                     )
-    #     return obs
+    def reset(self):
+        # self.INIT_RPYS
+        # self.INIT_XYZS = -0.3 + 0.6*np.random.rand(self.NUM_DRONES,3)
+        self.INIT_XYZS = np.array([
+            [0,0,0.1],
+            [0.5,0.5,0.1]
+        ])
+        
+        # self.INIT_XYZS[:,-1]=0.1
+        # self.vel = np.array([[1,1,0],[-1,-1,0]])
+        obs = super().reset()
+        return obs
+    
     def step(self, actions):
         # actions[0][-1]*=3
-        
-        action = actions[0]
-        # print(actions[0][-1])
-        # action = np.random.rand(4)
-        # actions[0][2] = 0
-        vx = action[0] - action[1]
-        vy = action[2] - action[3]
-        
-        action = {0:np.array([vx, vy, 0, 2])}
+        action_dict = {}
+        for i, action in actions.items():
+            # action = actions[0]
+            # print(actions[0][-1])
+            # action = np.random.rand(4)
+            # actions[0][2] = 0
+            vx = action[0] - action[1]
+            vy = action[2] - action[3]
             
-        return super().step(action)
+            action_dict[i] = np.array([vx, vy, 0, 2])
+            # print(action_dict[i])
+        # print(actions)
+        return super().step(action_dict)
          
 
     def _computeReward(self):
         rewards = {}
         # obs = (self._getDroneStateVector(i))
-        states = np.array([self._clipAndNormalizeState(self._getDroneStateVector(i)) for i in range(self.NUM_DRONES)])
-        des_state = self.get_desired_state(0)
-        
-        rewards[0] = -4 * np.linalg.norm(des_state[10:12] - states[0, 10:12])/2
-        # print(des_state[10:13], " | ", states[0, 10:13], rewards[0])
-        # rewards[0] = -4 * np.linalg.norm(np.array([0.1,0.5]) - states[0, 0:2])
-        # print(states[0,10:12])
-        rewards[0] += -1 * sum(np.abs(states[0, 7:9]))
-        # rewards[1] = -2 * np.linalg.norm(np.array([0.5,0.5,0]) - states[1, 0:3])**2
-        # rewards[1]=0
-        # for i in range(1, self.NUM_DRONES):
-        #     rewards[i] = -1 * np.linalg.norm(states[i-1, 2] - states[i, 2])**2
-        # print(f"reward 0: {rewards[0]:0.3f} | reward 1: {rewards[1]:0.3f} ")
+        states = np.array([self._getDroneStateVector(i) for i in range(self.NUM_DRONES)])
+
+        for i in range(self.NUM_DRONES):
+            r_sep = 0
+            r_align = 0
+            r_cohere = 0
+            rewards[i] = 0
+
+            # Motion reward: prevents agent from staying at rest
+            r_motion = 4 * np.linalg.norm(states[i, 10:12])
+            
+            # Stability: minimize roll and pitch angle magnitudes
+            r_stab = -1 * sum(np.abs(states[1, 7:9]))
+
+            for j in range(self.NUM_DRONES):
+                if j==i:
+                    continue
+                dist = np.linalg.norm(states[j,0:2] - states[i, 0:2])
+                if dist<0.1:
+                    r_sep += -5
+                elif 0.1 < dist < 0.3:
+                    r_align += -4 * np.linalg.norm(states[1,10:12] - states[0, 10:12])/2
+                elif dist > 0.3:
+                    r_cohere += -2*dist
+    
+            # rewards[i] += r_align 
+            rewards[i] += r_sep
+            rewards[i] += r_cohere
+            rewards[i] += r_motion
+            rewards[i] += r_stab
+            # print(f"Rewards {i}: r_align: {r_align} | r_sep: {r_sep} | r_cohere: {r_cohere} ")
         return rewards
     
     def _clipAndNormalizeStateWarning(self, state, clipped_pos_xy, clipped_pos_z, clipped_rp, clipped_vel_xy, clipped_vel_z):
@@ -66,6 +86,7 @@ class FlockingEnv(FlockAviary):
 
     def get_desired_state(self, i):
         state = np.zeros(20)
+        state[0:3] =  np.array([0.1,0.5,0.1])
         state[10:13] = self.SPEED_LIMIT*2*v_cap(np.array([2,1,0]))
         return self._clipAndNormalizeState(state)
     

@@ -17,8 +17,8 @@ device = torch.device('cpu') # cpu is apparently faster in this case
 
 np.set_printoptions(precision=3, suppress=True)
 seed = 0
-np.random.seed(seed)
-torch.manual_seed(seed)
+# np.random.seed(seed)
+# torch.manual_seed(seed)
 
 if __name__=="__main__":
 
@@ -28,15 +28,15 @@ if __name__=="__main__":
 
     TRAIN = args.train
     try:
-        num_agents = 1
-        
-        env = FlockingEnv(num_drones=num_agents, gui= TRAIN, act=ActionType.VEL, freq=80)
+        num_agents = 2
+        # initial_xyz = np.array([[1,1,1]])
+        env = FlockingEnv(num_drones=num_agents, gui=not TRAIN, act=ActionType.VEL, freq=80)
         # env = DebugEnv(gui= not TRAIN)
         num_obs = env.observation_space[0].shape[0]
         num_acts = env.action_space[0].shape[0]
         # Hyperparameters
         episodes = 10000  # number of training expi
-        max_steps = 100 # maximum steps in episode
+        max_steps = 200 # maximum steps in episode
         minibatch_size = 1024
         episodes_before_train = 50 # on average 10 episodes to fill the replay buffer
         history = {"reward":[], 0:{"reward":0, "act_loss":[], "q_loss":[]}, 1:{"reward":0}}
@@ -75,15 +75,12 @@ if __name__=="__main__":
                 # print(episode, action_dict, obs_dict)
                 # time.sleep(1)
                 obs_dict_next, reward_dict, done_dict, info_dict = env.step(action_dict)
-                
-                # print(time.perf_counter()-t1)
-                # if not TRAIN:
-                    # env.render()
-                    # print("Sdg")
-                    # time.sleep(0.5)
+                if not TRAIN:
+                    time.sleep(0.05)
+                dones = np.array(list(done_dict.values())[:-1])[:,np.newaxis]
+
                 history[0]["reward"] += reward_dict[0]
                 # history[1]["reward"] += reward_dict[1]
-                # print(reward_dict[0])
                 reward_ep += sum(reward_dict.values())/num_agents
                 
                 # if episode ends, manually set observations to None

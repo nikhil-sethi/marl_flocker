@@ -29,7 +29,7 @@ class BaseModel(nn.Module):
 class Actor(BaseModel):
     """Policy network"""
     def __init__(self, input_shape, output_size, device= torch.device('cpu')) -> None:
-        super().__init__(input_shape, output_size, device=device, alpha=0.01)
+        super().__init__(input_shape, output_size, device=device, alpha=0.001)
         # self._model.add_module("last", nn.Softmax(dim=0))
         # self.to(self.device)
 
