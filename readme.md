@@ -12,9 +12,9 @@ This repository contains code for the final project completed for the course Bio
 ## Results
 
 Video at test time
-
+<kbd>
 <p align='center'><img src="./media/flocking.gif" width=400 style="border: 3px solid grey" ></p>
-
+</kbd>
 
 Learning curve:
 <p align='center'><img src="./media/learning_curve.png" width=500></p>
