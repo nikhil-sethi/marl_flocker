@@ -13,7 +13,7 @@ This repository contains code for the final project completed for the course Bio
 
 Video at test time
 
-<p align='center'><img src="./media/flocking.gif" width=400></p>
+<p align='center'><img src="./media/flocking.gif" width=400 style="border: 3px solid grey" ></p>
 
 
 Learning curve:
@@ -33,8 +33,8 @@ The repository was tested with the following versions. Even though they are fair
 ## Setup
 
 ```
-git clone git@github.com:nikhil-sethi/ae435_bil.git
-cd ae4350_bil
+git clone git@github.com:nikhil-sethi/marl_flocker.git
+cd marl_flocker
 git submodule update --init --recursive
 cd maddpg/
 pip3 install -e .
@@ -49,7 +49,7 @@ cd ..
 cp scenarios/flocking.py multiagent-particle-envs/scenarios/
 
 cd maddpg/experiments
-python train.py --scenario flocking --num-episodes 20000 
+python train.py --scenario flocking --num-episodes 20000 --save-rate 100 --save-dir <path/to/this/repo>/results/policy
 ```
 
 ## Testing
