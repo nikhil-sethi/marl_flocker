@@ -14,7 +14,7 @@ class ReplayBuffer():
     def push(self, experience: tuple):
 
         obs = np.array(list(experience[0].values()))
-        # print(experience[1])
+        # print(obs)
         act = np.array(list(experience[1].values()))
         rewards = np.array(list(experience[2].values()))[:,np.newaxis]
         obs_next = np.array(list(experience[3].values()))

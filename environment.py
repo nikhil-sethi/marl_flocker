@@ -11,9 +11,59 @@ import pybullet as p
 def v_cap(v):
     return v/np.linalg.norm(v)
 
+def norm2d(v):
+    return math.sqrt(v[0]**2+v[1]**2)
+
 class FlockingEnv(FlockAviary):
     def __init__(self, drone_model: DroneModel = DroneModel.CF2X, num_drones: int = 2, neighbourhood_radius: float = np.inf, initial_xyzs=None, initial_rpys=None, physics: Physics = Physics.PYB, freq: int = 240, aggregate_phy_steps: int = 1, gui=False, record=False, obs: ObservationType = ObservationType.KIN, act: ActionType = ActionType.RPM):
+        self.obs_idx=[]
+        self.closest_obs_dist = {i:0 for i in range(num_drones)} # 0 us just an initial placeholder
+
         super().__init__(drone_model, num_drones, neighbourhood_radius, initial_xyzs, initial_rpys, physics, freq, aggregate_phy_steps, gui, record, obs, act)
+        self.v_old= np.zeros((self.NUM_DRONES, 2))
+        
+        
+        # self._addObstacles()
+
+    def _observationSpace(self):
+        # add closest distance from obstacle to observation
+        return gym.spaces.Dict({i: gym.spaces.Box(low=np.array([-1,-1,0, -1,-1,-1, -1,-1,-1, -1,-1,-1, 0]),
+                                              high=np.array([1,1,1, 1,1,1, 1,1,1, 1,1,1, 0.5]),
+                                              dtype=np.float32
+                                              ) for i in range(self.NUM_DRONES)})
+    
+
+    def _addObstacles(self):
+        obs_id = p.loadURDF("/home/nikhil/Nikhil/Masters/Courses/ae4350_bil/obstacles/wall.urdf",
+                    [0, 0.75, .15],
+                    p.getQuaternionFromEuler([0, 0, 0]),
+                    physicsClientId=self.CLIENT
+                    )
+        self.obs_idx.append(obs_id)
+
+        obs_id = p.loadURDF("/home/nikhil/Nikhil/Masters/Courses/ae4350_bil/obstacles/wall.urdf",
+                    [-0.75, 0, .15],
+                    p.getQuaternionFromEuler([0, 0, 1.57]),
+                    physicsClientId=self.CLIENT
+                    )
+        self.obs_idx.append(obs_id)
+
+        obs_id = p.loadURDF("/home/nikhil/Nikhil/Masters/Courses/ae4350_bil/obstacles/wall.urdf",
+                    [0, -0.75, .15],
+                    p.getQuaternionFromEuler([0, 0, 0]),
+                    physicsClientId=self.CLIENT
+                    )
+        self.obs_idx.append(obs_id)
+
+        obs_id = p.loadURDF("/home/nikhil/Nikhil/Masters/Courses/ae4350_bil/obstacles/wall.urdf",
+                    [0.75, 0, .15],
+                    p.getQuaternionFromEuler([0, 0, 1.57]),
+                    physicsClientId=self.CLIENT
+                    )
+        self.obs_idx.append(obs_id)
+        
+        # return super()._addObstacles()
+
 
     def reset(self):
         # self.INIT_RPYS
@@ -38,10 +88,19 @@ class FlockingEnv(FlockAviary):
             # actions[0][2] = 0
             vx = action[0] - action[1]
             vy = action[2] - action[3]
-            
-            action_dict[i] = np.array([vx, vy, 0, 2])
+            # v_mag = action[4]
+            # if abs(v_mag)>3:
+            #     v_mag=3
+            action_dict[i] = np.array([vx, vy, 0, 1])
+            # if i ==0:
+            #     action_dict[i] += np.array([1, 1, 0, 1])
+            # elif i ==1:
+            #     action_dict[i] += np.array([-1, -1, 0, 1])
             # print(action_dict[i])
         # print(actions)
+
+
+
         return super().step(action_dict)
          
 
@@ -54,33 +113,93 @@ class FlockingEnv(FlockAviary):
             r_sep = 0
             r_align = 0
             r_cohere = 0
+            r_v_mag = 0
+            r_acc = 0
+            r_wall = 0
             rewards[i] = 0
 
-            # Motion reward: prevents agent from staying at rest
-            r_motion = 4 * np.linalg.norm(states[i, 10:12])
+            # Motion reward: smooth motions
+            
+            # don't stay at rest
+            v_curr = states[i, 10:12]
+
+            v_mag = norm2d(v_curr)
+            if v_mag<0.5:
+                r_v_mag += v_mag - 0.5
+            
+            r_acc = -(norm2d(self.v_old[i]) - v_mag)
+
+            r_motion = 2 * r_v_mag + r_acc
             
             # Stability: minimize roll and pitch angle magnitudes
-            r_stab = -1 * sum(np.abs(states[1, 7:9]))
+            r_stab = -1 * sum(np.abs(states[i, 7:9]))
+
+            pos_i = states[i, 0:2]
+            if i==0:
+                r_target = -np.linalg.norm(np.array([1,1])- pos_i)**2
+            elif i==1:
+                r_target = -np.linalg.norm(np.array([0,0])- pos_i)**2
 
             for j in range(self.NUM_DRONES):
                 if j==i:
                     continue
-                dist = np.linalg.norm(states[j,0:2] - states[i, 0:2])
-                if dist<0.1:
+                pos_j = states[j, 0:2]
+                dist = np.linalg.norm(pos_j - pos_i)
+                # print(dist)
+                if dist<0.2:
                     r_sep += -5
-                elif 0.1 < dist < 0.3:
-                    r_align += -4 * np.linalg.norm(states[1,10:12] - states[0, 10:12])/2
-                elif dist > 0.3:
-                    r_cohere += -2*dist
-    
-            # rewards[i] += r_align 
+                # elif 0.2< dist < 0.4:
+                r_align += -4 * np.linalg.norm(states[j,10:12] - states[i, 10:12])
+                # elif dist > 0.4:
+                #     r_cohere += -dist
+                r_cohere += -2*dist
+
+                # target waypoint
+                
+            for k in self.obs_idx:
+                closest_dist = 100
+                closest_obs_pt = p.getClosestPoints(bodyA=i+1,
+                    bodyB=k,
+                    distance = 10, # so that we always return a distance but rewards are shaped accordingly
+                    physicsClientId=self.CLIENT
+                    )
+                dist = closest_obs_pt[0][8]
+                if dist <closest_dist:
+                    closest_dist = dist
+            if closest_dist <=0:
+                r_wall += -2
+            if 0<closest_dist < 0.3:
+                r_wall+= 2*(closest_dist**0.3 - 0.3**0.3) # closer you are to the wall, more negative it is
+
+            self.closest_obs_dist[i] = closest_dist
+                # if len(obs_k_closest)>0:
+                #     print(i, )
+            # print(coll_pts)
+
+            # if self.collision:
+            #     rewards[i]+= -10
+            rewards[i] += r_align 
             rewards[i] += r_sep
-            rewards[i] += r_cohere
-            rewards[i] += r_motion
+            # rewards[i] += r_target
+            rewards[i] += r_wall
+            # rewards[i] += r_cohere
+            # rewards[i] += r_motion
             rewards[i] += r_stab
-            # print(f"Rewards {i}: r_align: {r_align} | r_sep: {r_sep} | r_cohere: {r_cohere} ")
+            self.v_old[i] = v_curr
+            # print(f"Rewards {i}: r_align: {r_align} | r_sep: {r_sep} | r_cohere: {r_cohere} r_motion: {r_motion} r_stab: {r_stab} | r_target: {r_target} | r_wall: {r_wall}")
+
         return rewards
     
+
+    def _computeObs(self):
+        orig_obs = super()._computeObs()
+
+        # add distance to closest wall
+        for i in range(self.NUM_DRONES):
+            orig_obs[i] = np.append(orig_obs[i], self.closest_obs_dist[i])
+        
+        return orig_obs
+
     def _clipAndNormalizeStateWarning(self, state, clipped_pos_xy, clipped_pos_z, clipped_rp, clipped_vel_xy, clipped_vel_z):
         pass
 

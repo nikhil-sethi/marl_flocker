@@ -37,7 +37,6 @@ class Actor(BaseModel):
         out = super().forward(input)
         return torch.softmax(out, dim=1)
 
-
 class Critic(BaseModel):
     """Q-value network"""
     def __init__(self, input_shape, output_size=1, device= torch.device('cpu')) -> None:
@@ -50,6 +49,6 @@ class Critic(BaseModel):
 if __name__=="__main__":
     actor = Actor(12,4)
 
-    action = actor(torch.from_numpy(np.random.rand(12)))
+    action = actor.forward(torch.tensor(np.random.rand(12), dtype=torch.float))
 
     print(action)

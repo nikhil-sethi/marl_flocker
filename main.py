@@ -16,27 +16,30 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 device = torch.device('cpu') # cpu is apparently faster in this case
 
 np.set_printoptions(precision=3, suppress=True)
-seed = 0
-# np.random.seed(seed)
-# torch.manual_seed(seed)
+seed = 123
+np.random.seed(seed)
+torch.manual_seed(seed)
 
 if __name__=="__main__":
 
     parser  = argparse.ArgumentParser()
     parser.add_argument("--train", type=bool, default=False)
+    parser.add_argument("--gui", type=bool, default=False)
     args = parser.parse_args()
 
     TRAIN = args.train
     try:
         num_agents = 2
         # initial_xyz = np.array([[1,1,1]])
-        env = FlockingEnv(num_drones=num_agents, gui=not TRAIN, act=ActionType.VEL, freq=80)
-        # env = DebugEnv(gui= not TRAIN)
+        # env = FlockingEnv(num_drones=num_agents, gui= args.gui, act=ActionType.VEL, freq=120, aggregate_phy_steps=5)
+        env = DebugEnv(gui= not TRAIN)
         num_obs = env.observation_space[0].shape[0]
+        print(env.action_space)
         num_acts = env.action_space[0].shape[0]
         # Hyperparameters
         episodes = 10000  # number of training expi
         max_steps = 200 # maximum steps in episode
+        env.EPISODE_LEN_SEC = 5
         minibatch_size = 1024
         episodes_before_train = 50 # on average 10 episodes to fill the replay buffer
         history = {"reward":[], 0:{"reward":0, "act_loss":[], "q_loss":[]}, 1:{"reward":0}}
@@ -76,7 +79,8 @@ if __name__=="__main__":
                 # time.sleep(1)
                 obs_dict_next, reward_dict, done_dict, info_dict = env.step(action_dict)
                 if not TRAIN:
-                    time.sleep(0.05)
+                    env.render()
+                    time.sleep(0.01)
                 dones = np.array(list(done_dict.values())[:-1])[:,np.newaxis]
 
                 history[0]["reward"] += reward_dict[0]
@@ -111,6 +115,8 @@ if __name__=="__main__":
                 
                 total_steps +=1
                 episode_steps += 1
+                # print(episode_steps)
+
                 algo.episode = episode
             history["reward"].append(reward_ep)
             
